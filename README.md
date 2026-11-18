@@ -48,5 +48,5 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LucasRikelmi/LucasRikelmi/output/contribuicoes-dark.svg">
-  <img src="https://raw.githubusercontent.com/LucasRikelmi/LucasRikelmi/output/contribuicoes-light.svg" width="100%" alt="Commits públicos de @LucasRikelmi nos últimos 12 meses, por dia, com varredura animada. Atualizado todo dia por um GitHub Action.">
+  <img src="https://raw.githubusercontent.com/LucasRikelmi/LucasRikelmi/output/contribuicoes-light.svg" width="100%" alt="Contribuições de @LucasRikelmi nos últimos 12 meses, por dia, com varredura animada. Mesmo calendário do perfil, atualizado todo dia por um GitHub Action.">
 </picture>

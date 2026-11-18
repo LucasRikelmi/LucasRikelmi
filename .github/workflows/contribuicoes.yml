@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Só biblioteca padrão do Python; lê commits públicos pela API de busca.
+      # Só biblioteca padrão do Python; lê o calendário de contribuições do perfil (GraphQL).
       - name: Gerar SVGs
         run: python3 tools/contribuicoes.py --user "${{ github.repository_owner }}" --out dist
         env:

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Gera assets/contribuicoes-{light,dark}.svg: calendário de commits públicos com varredura animada.
+"""Gera assets/contribuicoes-{light,dark}.svg: calendário de contribuições com varredura animada.
 
-Só biblioteca padrão. Fonte: API de busca de commits do GitHub (só repositórios públicos, branch padrão).
+Só biblioteca padrão. Fonte: calendário de contribuições do perfil (GraphQL), o mesmo do gráfico do GitHub.
 Uso:
   GITHUB_TOKEN=... python3 tools/contribuicoes.py --user LucasRikelmi --out assets
-  python3 tools/contribuicoes.py --dados commits.json --out assets          # offline
+  python3 tools/contribuicoes.py --dados calendario.json --out assets        # offline
 """
 import argparse, datetime as dt, json, os, urllib.request, urllib.parse
-from collections import Counter
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 G = json.load(open(os.path.join(AQUI, "glyphs.json"), encoding="utf-8"))
@@ -26,23 +25,21 @@ MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "
 
 
 # ── dados ────────────────────────────────────────────────────────────────────
+QUERY = """query($login: String!) { user(login: $login) { contributionsCollection { contributionCalendar {
+  totalContributions weeks { contributionDays { date contributionCount } } } } } }"""
+
+
 def buscar(user, token):
-    out, page = [], 1
-    while True:
-        q = urllib.parse.urlencode({"q": f"author:{user}", "per_page": 100, "page": page, "sort": "author-date"})
-        req = urllib.request.Request(f"https://api.github.com/search/commits?{q}", headers={
-            "Accept": "application/vnd.github+json", "User-Agent": "perfil-contribuicoes",
-            **({"Authorization": f"Bearer {token}"} if token else {})})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            items = json.load(r)["items"]
-        out += [{"repo": i["repository"]["full_name"], "date": i["commit"]["author"]["date"], "sha": i["sha"]} for i in items]
-        if len(items) < 100 or page == 10:  # a busca devolve no máximo 1000 resultados
-            return out
-        page += 1
-
-
-def dia(iso):
-    return dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(BRT).date()
+    """Mesmo calendário do perfil (GraphQL contributionCalendar): commits, PRs, issues e revisões."""
+    body = json.dumps({"query": QUERY, "variables": {"login": user}}).encode()
+    req = urllib.request.Request("https://api.github.com/graphql", data=body, headers={
+        "Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "perfil-contribuicoes"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        resp = json.load(r)
+    if "errors" in resp:
+        raise SystemExit(f"GraphQL: {resp['errors']}")
+    cal = resp["data"]["user"]["contributionsCollection"]["contributionCalendar"]
+    return {d["date"]: d["contributionCount"] for w in cal["weeks"] for d in w["contributionDays"]}
 
 
 # ── texto como path (sem fonte externa) ─────────────────────────────────────
@@ -78,16 +75,15 @@ def check(x, y, s, col):
 
 
 # ── SVG ─────────────────────────────────────────────────────────────────────
-def gerar(commits, user, th, hoje):
+def gerar(cal, user, th):
     c = T[th]
     t = Txt()
-    por_dia = Counter(dia(x["date"]) for x in commits)
-    fim = hoje
-    ini = fim - dt.timedelta(days=fim.isoweekday() % 7 + 52 * 7)  # domingo, 53 semanas
+    datas = sorted(dt.date.fromisoformat(d) for d in cal)
+    ini, fim = datas[0], datas[-1]
+    ini -= dt.timedelta(days=ini.isoweekday() % 7)  # a grade começa no domingo, como no perfil
     dias = [ini + dt.timedelta(d) for d in range((fim - ini).days + 1)]
-    no_periodo = {d: n for d, n in por_dia.items() if ini <= d <= fim}
+    no_periodo = {dt.date.fromisoformat(d): n for d, n in cal.items() if n > 0}
     total = sum(no_periodo.values())
-    repos = len({x["repo"] for x in commits if ini <= dia(x["date"]) <= fim})
     seq = best = 0
     for d in dias:
         seq = seq + 1 if no_periodo.get(d) else 0
@@ -105,7 +101,7 @@ def gerar(commits, user, th, hoje):
     title = f"contribuições — @{user}"
     o.append(t(title, (W - len(title) * 13 * ADV) / 2, bar / 2 + 4.5, 13, c["muted"]))
     o.append(t("~ $", 28, 74, 14, c["ok"]))
-    o.append(t('git log --since="1 year" --format=%as | uniq -c', 28 + 4 * 14 * ADV, 74, 14, c["ink"]))
+    o.append(t(f'gh api graphql -F login={user} -f query=@calendario.graphql', 28 + 4 * 14 * ADV, 74, 14, c["ink"]))
 
     mes_ant = None
     for w in range(ncol):
@@ -148,7 +144,7 @@ def gerar(commits, user, th, hoje):
 
     sy = by + 30
     o.append(check(28, sy - 1, 14, c["ok"]))
-    resumo = f"{total} commits · {len(no_periodo)} dias ativos · {repos} repositórios públicos · maior sequência: {best} {'dia' if best == 1 else 'dias'}"
+    resumo = f"{total} {'contribuição' if total == 1 else 'contribuições'} · {len(no_periodo)} dias ativos · maior sequência: {best} {'dia' if best == 1 else 'dias'}"
     o.append(t(resumo, 50, sy, 13, c["ink"]))
     o.append(f'<rect class="cur" x="{50 + (len(resumo) + 1) * 13 * ADV:.1f}" y="{sy - 12}" width="8" height="15" fill="{c["ink"]}"/>')
     o.append(f'<rect x="1" y="1" width="{W - 2}" height="{H - 2}" rx="14" fill="none" stroke="{c["line"]}" stroke-width="1.5"/>')
@@ -172,17 +168,15 @@ def gerar(commits, user, th, hoje):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--user", default="LucasRikelmi")
-    ap.add_argument("--dados", help="JSON com [{repo, date, sha}] em vez de consultar a API")
-    ap.add_argument("--hoje", help="AAAA-MM-DD (padrão: hoje em Brasília)")
+    ap.add_argument("--dados", help="JSON {AAAA-MM-DD: contagem} em vez de consultar a API")
     ap.add_argument("--out", default="assets")
     a = ap.parse_args()
-    commits = json.load(open(a.dados)) if a.dados else buscar(a.user, os.environ.get("GITHUB_TOKEN"))
-    hoje = dt.date.fromisoformat(a.hoje) if a.hoje else dt.datetime.now(BRT).date()
+    cal = json.load(open(a.dados)) if a.dados else buscar(a.user, os.environ["GITHUB_TOKEN"])
     os.makedirs(a.out, exist_ok=True)
     for th in ("light", "dark"):
         with open(os.path.join(a.out, f"contribuicoes-{th}.svg"), "w", encoding="utf-8") as f:
-            f.write(gerar(commits, a.user, th, hoje))
-    print(f"{len(commits)} commits lidos")
+            f.write(gerar(cal, a.user, th))
+    print(f"{sum(cal.values())} contribuições em {len(cal)} dias")
 
 
 if __name__ == "__main__":
