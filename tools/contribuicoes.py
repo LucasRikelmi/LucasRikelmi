@@ -82,9 +82,11 @@ def buscar(user, token):
     for d, n in total.items():
         v = {k: det.get(d, {}).get(k, 0) for k, _ in TIPOS}
         resto = n - sum(v.values())
-        if resto:
-            v["outros"] = resto  # o calendário conta algo que as listas não trouxeram (ou vice-versa)
-        dias[d] = {"total": n, **{k: x for k, x in v.items() if x}}
+        if resto > 0:
+            v["outros"] = resto  # o calendário conta algo que as listas não trazem
+        elif resto < 0:
+            v["fora_do_dia"] = -resto  # itens perto da meia-noite que o calendário pôs no dia vizinho
+        dias[d] = {"total": n, **{k: x for k, x in v.items() if x}}  # "total" é o do calendário (o que a grade mostra)
     tot = {"commits": cc["totalCommitContributions"], "prs": cc["totalPullRequestContributions"],
            "issues": cc["totalIssueContributions"], "revisoes": cc["totalPullRequestReviewContributions"],
            "repos": cc["totalRepositoryContributions"]}
