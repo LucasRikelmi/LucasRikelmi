@@ -43,7 +43,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/h-contribuicoes-dark.svg">
-  <img src="assets/h-contribuicoes-light.svg" width="100%" alt="04 contribuicoes">
+  <img src="assets/h-contribuicoes-light.svg" width="100%" alt="04 contribuições">
 </picture>
 
 <picture>

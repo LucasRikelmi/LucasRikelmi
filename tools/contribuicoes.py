@@ -102,10 +102,10 @@ def gerar(commits, user, th, hoje):
     o.append(f'<path d="M1 15a14 14 0 0 1 14-14H{W - 15}a14 14 0 0 1 14 14V{bar}H1Z" fill="{c["bar"]}"/><path d="M1 {bar}.5H{W - 1}" stroke="{c["line"]}"/>')
     for i, col in enumerate(("#ff5f57", "#febc2e", "#28c840")):
         o.append(f'<circle cx="{24 + i * 19}" cy="{bar / 2}" r="6" fill="{col}"/>')
-    title = f"contribuicoes — @{user}"
+    title = f"contribuições — @{user}"
     o.append(t(title, (W - len(title) * 13 * ADV) / 2, bar / 2 + 4.5, 13, c["muted"]))
     o.append(t("~ $", 28, 74, 14, c["ok"]))
-    o.append(t('git log --since="1 ano" --format=%as | uniq -c', 28 + 4 * 14 * ADV, 74, 14, c["ink"]))
+    o.append(t('git log --since="1 year" --format=%as | uniq -c', 28 + 4 * 14 * ADV, 74, 14, c["ink"]))
 
     mes_ant = None
     for w in range(ncol):
