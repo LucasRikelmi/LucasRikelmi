@@ -26,12 +26,25 @@ MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "
 
 # ── dados ────────────────────────────────────────────────────────────────────
 QUERY = """query($login: String!, $from: DateTime!, $to: DateTime!) { user(login: $login) {
-  contributionsCollection(from: $from, to: $to) { contributionCalendar {
-  totalContributions weeks { contributionDays { date contributionCount } } } } } }"""
+  contributionsCollection(from: $from, to: $to) {
+    contributionCalendar { weeks { contributionDays { date contributionCount } } }
+    totalCommitContributions totalPullRequestContributions totalIssueContributions
+    totalPullRequestReviewContributions totalRepositoryContributions
+    commitContributionsByRepository(maxRepositories: 100) { contributions(first: 100) { nodes { occurredAt commitCount } } }
+    pullRequestContributions(first: 100) { nodes { occurredAt } }
+    issueContributions(first: 100) { nodes { occurredAt } }
+    pullRequestReviewContributions(first: 100) { nodes { occurredAt } }
+    repositoryContributions(first: 100) { nodes { occurredAt } } } } }"""
+TIPOS = [("commits", "commits"), ("prs", "PRs"), ("issues", "issues"), ("revisoes", "revisões"), ("repos", "repositórios")]
+
+
+def _brt(iso):
+    return dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(BRT).date().isoformat()
 
 
 def buscar(user, token):
-    """Mesmo calendário do perfil (GraphQL contributionCalendar): commits, PRs, issues e revisões."""
+    """Mesmo calendário do perfil (GraphQL contributionCalendar) + detalhamento por tipo.
+    Uma consulta só (custo baixo); listas paginadas em 100, os totais por tipo vêm dos campos total*."""
     # Sem from/to a API corta os dias em UTC; com o fuso de Brasília no intervalo, os dias batem com o perfil.
     agora = dt.datetime.now(BRT)
     fim = agora.replace(hour=23, minute=59, second=59, microsecond=0)
@@ -43,8 +56,46 @@ def buscar(user, token):
         resp = json.load(r)
     if "errors" in resp:
         raise SystemExit(f"GraphQL: {resp['errors']}")
-    cal = resp["data"]["user"]["contributionsCollection"]["contributionCalendar"]
-    return {d["date"]: d["contributionCount"] for w in cal["weeks"] for d in w["contributionDays"]}
+    cc = resp["data"]["user"]["contributionsCollection"]
+    total = {d["date"]: d["contributionCount"] for w in cc["contributionCalendar"]["weeks"] for d in w["contributionDays"]}
+
+    outros = {}
+    for k, campo in (("prs", "pullRequestContributions"), ("issues", "issueContributions"),
+                     ("revisoes", "pullRequestReviewContributions"), ("repos", "repositoryContributions")):
+        for n in cc[campo]["nodes"]:
+            outros.setdefault(_brt(n["occurredAt"]), {}).setdefault(k, 0)
+            outros[_brt(n["occurredAt"])][k] += 1
+    nodes = [n for r in cc["commitContributionsByRepository"] for n in r["contributions"]["nodes"]]
+
+    # Commits vêm agregados por dia; o carimbo pode ser meia-noite no fuso da consulta ou em UTC.
+    # Escolhe a leitura que fecha com o calendário em mais dias.
+    def montar(chave):
+        det = {d: dict(v) for d, v in outros.items()}
+        for n in nodes:
+            det.setdefault(chave(n["occurredAt"]), {}).setdefault("commits", 0)
+            det[chave(n["occurredAt"])]["commits"] += n["commitCount"]
+        ok = sum(1 for d, n in total.items() if n and sum(det.get(d, {}).values()) == n)
+        return ok, det
+    _, det = max(montar(lambda s: s[:10]), montar(_brt), key=lambda x: x[0])
+
+    dias = {}
+    for d, n in total.items():
+        v = {k: det.get(d, {}).get(k, 0) for k, _ in TIPOS}
+        resto = n - sum(v.values())
+        if resto:
+            v["outros"] = resto  # o calendário conta algo que as listas não trouxeram (ou vice-versa)
+        dias[d] = {"total": n, **{k: x for k, x in v.items() if x}}
+    tot = {"commits": cc["totalCommitContributions"], "prs": cc["totalPullRequestContributions"],
+           "issues": cc["totalIssueContributions"], "revisoes": cc["totalPullRequestReviewContributions"],
+           "repos": cc["totalRepositoryContributions"]}
+    return {"dias": dias, "totais": tot}
+
+
+def normalizar(dados):
+    """Aceita o formato novo ({dias, totais}) ou o antigo ({data: total})."""
+    if "dias" in dados:
+        return dados
+    return {"dias": {d: {"total": n} for d, n in dados.items()}, "totais": None}
 
 
 # ── texto como path (sem fonte externa) ─────────────────────────────────────
@@ -80,7 +131,9 @@ def check(x, y, s, col):
 
 
 # ── SVG ─────────────────────────────────────────────────────────────────────
-def gerar(cal, user, th):
+def gerar(dados, user, th):
+    cal = {d: v["total"] for d, v in dados["dias"].items()}
+    tot = dados["totais"]
     c = T[th]
     t = Txt()
     datas = sorted(dt.date.fromisoformat(d) for d in cal)
@@ -94,8 +147,8 @@ def gerar(cal, user, th):
         seq = seq + 1 if no_periodo.get(d) else 0
         best = max(best, seq)
 
-    W, H, bar = 1000, 300, 40
-    gx, gy, cw, ch = 74, 112, 16.5, 16.5
+    W, H, bar = 1000, 322 if tot else 300, 40
+    gx, gy, cw, ch = 66, 112, 16.3, 16.5
     ncol = len(dias) // 7 + (1 if len(dias) % 7 else 0)
     DUR = 9.0
     o = []
@@ -122,14 +175,16 @@ def gerar(cal, user, th):
     q = [nz[min(len(nz) - 1, int(len(nz) * f))] for f in (.25, .5, .75)] if nz else [0, 0, 0]
     for i, d in enumerate(dias):
         w, r = divmod(i, 7)
-        x, y = gx + w * cw + 3, gy + r * ch + 11.5
+        x, y = gx + w * cw, gy + r * ch + 11.5
         n = no_periodo.get(d, 0)
         delay = f"animation-delay:{DUR * (w + .5) / ncol:.2f}s"
+        fs = 10.5
         if n == 0:
-            cells.append(t("0", x, y, 12.5, c["dim"], cls="hz", style=delay))
+            cells.append(t("0", x + fs * ADV / 2, y, fs, c["dim"], cls="hz", style=delay))
         else:
             lv = 0 if n <= q[0] else 1 if n <= q[1] else 2 if n <= q[2] else 3
-            cells.append(t("1", x, y, 12.5, c["lv"][lv], bold=True, cls=f"h{lv}", style=delay))
+            s_ = str(min(n, 99))  # 2 caracteres por célula mantêm a grade alinhada; acima de 99 o exato fica no calendario.json
+            cells.append(t(s_, x + (2 - len(s_)) * fs * ADV / 2, y, fs, c["lv"][lv], bold=True, cls=f"h{lv}", style=delay))
     o.append("".join(cells))
 
     gw, gh = ncol * cw, 7 * ch
@@ -153,11 +208,15 @@ def gerar(cal, user, th):
     resumo = f"{total} {'contribuição indexada' if total == 1 else 'contribuições indexadas'} · {len(no_periodo)} dias ativos · maior sequência: {best} {'dia' if best == 1 else 'dias'}"
     o.append(t(resumo, 50, sy, 13, c["ink"]))
     o.append(f'<rect class="cur" x="{50 + (len(resumo) + 1) * 13 * ADV:.1f}" y="{sy - 12}" width="8" height="15" fill="{c["ink"]}"/>')
+    if tot:
+        tipos = " · ".join(f"{tot[k]} {nome}" for k, nome in TIPOS if tot[k])
+        o.append(t("↳", 30, sy + 22, 13, c["muted"]) if "↳" in G["glyphs"]["mono"] else "")
+        o.append(t(tipos, 50, sy + 22, 13, c["muted"]))
     lx = W - 28 - len("mais") * 11 * ADV
     o.append(t("mais", lx, sy, 11, c["muted"]))
     for k, col in enumerate(reversed([c["dim"]] + c["lv"])):
         lx -= 14
-        o.append(t("0" if k == 4 else "1", lx, sy, 12.5, col, bold=k != 4))
+        o.append(f'<rect x="{lx:.1f}" y="{sy - 10}" width="11" height="11" rx="2.5" fill="{c["zero"] if k == 4 else col}"/>')
     lx -= 10 + len("menos") * 11 * ADV
     o.append(t("menos", lx, sy, 11, c["muted"]))
     o.append(f'<rect x="1" y="1" width="{W - 2}" height="{H - 2}" rx="14" fill="none" stroke="{c["line"]}" stroke-width="1.5"/>')
@@ -217,14 +276,14 @@ def main():
             with open(os.path.join(a.out, f"rodape-{th}.svg"), "w", encoding="utf-8") as f:
                 f.write(rodape(th))
         return
-    cal = json.load(open(a.dados)) if a.dados else buscar(a.user, os.environ["GITHUB_TOKEN"])
+    dados = normalizar(json.load(open(a.dados))) if a.dados else buscar(a.user, os.environ["GITHUB_TOKEN"])
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "calendario.json"), "w", encoding="utf-8") as f:
-        json.dump(cal, f, indent=0, sort_keys=True)  # dados brutos publicados junto, para conferência
+        json.dump(dados, f, indent=1, sort_keys=True, ensure_ascii=False)  # dados brutos publicados junto, para conferência
     for th in ("light", "dark"):
         with open(os.path.join(a.out, f"contribuicoes-{th}.svg"), "w", encoding="utf-8") as f:
-            f.write(gerar(cal, a.user, th))
-    print(f"{sum(cal.values())} contribuições em {len(cal)} dias")
+            f.write(gerar(dados, a.user, th))
+    print(f"{sum(v['total'] for v in dados['dias'].values())} contribuições; totais por tipo: {dados['totais']}")
 
 
 if __name__ == "__main__":
