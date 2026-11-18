@@ -25,13 +25,18 @@ MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "
 
 
 # ── dados ────────────────────────────────────────────────────────────────────
-QUERY = """query($login: String!) { user(login: $login) { contributionsCollection { contributionCalendar {
+QUERY = """query($login: String!, $from: DateTime!, $to: DateTime!) { user(login: $login) {
+  contributionsCollection(from: $from, to: $to) { contributionCalendar {
   totalContributions weeks { contributionDays { date contributionCount } } } } } }"""
 
 
 def buscar(user, token):
     """Mesmo calendário do perfil (GraphQL contributionCalendar): commits, PRs, issues e revisões."""
-    body = json.dumps({"query": QUERY, "variables": {"login": user}}).encode()
+    # Sem from/to a API corta os dias em UTC; com o fuso de Brasília no intervalo, os dias batem com o perfil.
+    agora = dt.datetime.now(BRT)
+    fim = agora.replace(hour=23, minute=59, second=59, microsecond=0)
+    ini = (fim - dt.timedelta(days=365)).replace(hour=0, minute=0, second=0) + dt.timedelta(days=1)
+    body = json.dumps({"query": QUERY, "variables": {"login": user, "from": ini.isoformat(), "to": fim.isoformat()}}).encode()
     req = urllib.request.Request("https://api.github.com/graphql", data=body, headers={
         "Authorization": f"Bearer {token}", "Content-Type": "application/json", "User-Agent": "perfil-contribuicoes"})
     with urllib.request.urlopen(req, timeout=30) as r:
@@ -173,6 +178,8 @@ def main():
     a = ap.parse_args()
     cal = json.load(open(a.dados)) if a.dados else buscar(a.user, os.environ["GITHUB_TOKEN"])
     os.makedirs(a.out, exist_ok=True)
+    with open(os.path.join(a.out, "calendario.json"), "w", encoding="utf-8") as f:
+        json.dump(cal, f, indent=0, sort_keys=True)  # dados brutos publicados junto, para conferência
     for th in ("light", "dark"):
         with open(os.path.join(a.out, f"contribuicoes-{th}.svg"), "w", encoding="utf-8") as f:
             f.write(gerar(cal, a.user, th))
