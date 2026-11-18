@@ -15,10 +15,10 @@ BRT = dt.timezone(dt.timedelta(hours=-3))
 
 T = {
     "light": dict(win="#ffffff", bar="#f3f5f8", line="#dde2e8", ink="#0f1419", muted="#5b6573", dim="#c3cad3",
-                  ok="#15803d", accent="#5b3fd9", data="#0369a1", flash="#0369a1", track="#eef1f5",
+                  ok="#15803d", accent="#5b3fd9", data="#0369a1", flash="#0369a1", track="#eef1f5", zero="#e6eaef",
                   lv=["#9d8ff0", "#7a66e3", "#5b3fd9", "#3b2299"]),
     "dark": dict(win="#11161d", bar="#19202b", line="#2a3340", ink="#e7eaef", muted="#8b96a5", dim="#2e3744",
-                 ok="#4ade80", accent="#a99bff", data="#5cc8ff", flash="#5cc8ff", track="#19202b",
+                 ok="#4ade80", accent="#a99bff", data="#5cc8ff", flash="#5cc8ff", track="#19202b", zero="#1c2430",
                  lv=["#5e52a8", "#8073dc", "#a99bff", "#dcd5ff"]),
 }
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
@@ -115,20 +115,23 @@ def gerar(cal, user, th):
             o.append(t(MESES[d.month - 1], gx + w * cw, gy - 8, 11, c["muted"]))
             mes_ant = d.month
     for r, nome in ((1, "seg"), (3, "qua"), (5, "sex")):
-        o.append(t(nome, gx - 38, gy + r * ch + 12, 11, c["muted"]))
+        o.append(t(nome, gx - 38, gy + r * ch + 10, 11, c["muted"]))
 
     cells = []
+    nz = sorted(no_periodo.values())
+    q = [nz[min(len(nz) - 1, int(len(nz) * f))] for f in (.25, .5, .75)] if nz else [0, 0, 0]
+    sq = 12.5
     for i, d in enumerate(dias):
         w, r = divmod(i, 7)
-        x, y = gx + w * cw, gy + r * ch + 12
+        x, y = gx + w * cw, gy + r * ch
         n = no_periodo.get(d, 0)
         delay = f"animation-delay:{DUR * (w + .5) / ncol:.2f}s"
         if n == 0:
-            cells.append(t("·", x + 1, y, 13, c["dim"]))
+            cls, col = "hz", c["zero"]
         else:
-            lv = 0 if n < 3 else 1 if n < 8 else 2 if n < 20 else 3
-            s = str(n) if n < 10 else "+"
-            cells.append(t(s, x + 1, y, 13, c["lv"][lv], bold=True, cls=f"h{lv}", style=delay))
+            lv = 0 if n <= q[0] else 1 if n <= q[1] else 2 if n <= q[2] else 3
+            cls, col = f"h{lv}", c["lv"][lv]
+        cells.append(f'<rect class="{cls}" style="{delay}" x="{x:.1f}" y="{y:.1f}" width="{sq}" height="{sq}" rx="2.5" fill="{col}"/>')
     o.append("".join(cells))
 
     gw, gh = ncol * cw, 7 * ch
@@ -152,12 +155,20 @@ def gerar(cal, user, th):
     resumo = f"{total} {'contribuição' if total == 1 else 'contribuições'} · {len(no_periodo)} dias ativos · maior sequência: {best} {'dia' if best == 1 else 'dias'}"
     o.append(t(resumo, 50, sy, 13, c["ink"]))
     o.append(f'<rect class="cur" x="{50 + (len(resumo) + 1) * 13 * ADV:.1f}" y="{sy - 12}" width="8" height="15" fill="{c["ink"]}"/>')
+    lx = W - 28 - len("mais") * 11 * ADV
+    o.append(t("mais", lx, sy, 11, c["muted"]))
+    for k, col in enumerate(reversed([c["zero"]] + c["lv"])):
+        lx -= 16
+        o.append(f'<rect x="{lx:.1f}" y="{sy - 10}" width="12" height="12" rx="2.5" fill="{col}"/>')
+    lx -= 8 + len("menos") * 11 * ADV
+    o.append(t("menos", lx, sy, 11, c["muted"]))
     o.append(f'<rect x="1" y="1" width="{W - 2}" height="{H - 2}" rx="14" fill="none" stroke="{c["line"]}" stroke-width="1.5"/>')
 
     css = (f".scan{{animation:scan {DUR}s linear infinite}}"
            f"@keyframes scan{{0%{{transform:translateX(0);opacity:1}}97%{{opacity:1}}100%{{transform:translateX({gw + 4:.1f}px);opacity:0}}}}"
+           + f".hz{{animation:hz {DUR}s linear infinite}}@keyframes hz{{0%{{fill:{c['muted']}}}6%,100%{{fill:{c['zero']}}}}}"
            + "".join(f".h{i}{{animation:h{i} {DUR}s linear infinite}}"
-                     f"@keyframes h{i}{{0%{{fill:{c['flash']}}}3%{{fill:{c['ink']}}}9%,100%{{fill:{col}}}}}"
+                     f"@keyframes h{i}{{0%{{fill:{c['flash']}}}9%,100%{{fill:{col}}}}}"
                      for i, col in enumerate(c["lv"])) +
            f".prog{{transform-box:fill-box;transform-origin:0 50%;animation:prog {DUR}s linear infinite}}"
            f"@keyframes prog{{from{{transform:scaleX(0)}}}}"
