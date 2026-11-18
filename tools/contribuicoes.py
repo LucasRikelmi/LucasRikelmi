@@ -120,18 +120,16 @@ def gerar(cal, user, th):
     cells = []
     nz = sorted(no_periodo.values())
     q = [nz[min(len(nz) - 1, int(len(nz) * f))] for f in (.25, .5, .75)] if nz else [0, 0, 0]
-    sq = 12.5
     for i, d in enumerate(dias):
         w, r = divmod(i, 7)
-        x, y = gx + w * cw, gy + r * ch
+        x, y = gx + w * cw + 3, gy + r * ch + 11.5
         n = no_periodo.get(d, 0)
         delay = f"animation-delay:{DUR * (w + .5) / ncol:.2f}s"
         if n == 0:
-            cls, col = "hz", c["zero"]
+            cells.append(t("0", x, y, 12.5, c["dim"], cls="hz", style=delay))
         else:
             lv = 0 if n <= q[0] else 1 if n <= q[1] else 2 if n <= q[2] else 3
-            cls, col = f"h{lv}", c["lv"][lv]
-        cells.append(f'<rect class="{cls}" style="{delay}" x="{x:.1f}" y="{y:.1f}" width="{sq}" height="{sq}" rx="2.5" fill="{col}"/>')
+            cells.append(t("1", x, y, 12.5, c["lv"][lv], bold=True, cls=f"h{lv}", style=delay))
     o.append("".join(cells))
 
     gw, gh = ncol * cw, 7 * ch
@@ -152,23 +150,23 @@ def gerar(cal, user, th):
 
     sy = by + 30
     o.append(check(28, sy - 1, 14, c["ok"]))
-    resumo = f"{total} {'contribuição' if total == 1 else 'contribuições'} · {len(no_periodo)} dias ativos · maior sequência: {best} {'dia' if best == 1 else 'dias'}"
+    resumo = f"{total} {'contribuição indexada' if total == 1 else 'contribuições indexadas'} · {len(no_periodo)} dias ativos · maior sequência: {best} {'dia' if best == 1 else 'dias'}"
     o.append(t(resumo, 50, sy, 13, c["ink"]))
     o.append(f'<rect class="cur" x="{50 + (len(resumo) + 1) * 13 * ADV:.1f}" y="{sy - 12}" width="8" height="15" fill="{c["ink"]}"/>')
     lx = W - 28 - len("mais") * 11 * ADV
     o.append(t("mais", lx, sy, 11, c["muted"]))
-    for k, col in enumerate(reversed([c["zero"]] + c["lv"])):
-        lx -= 16
-        o.append(f'<rect x="{lx:.1f}" y="{sy - 10}" width="12" height="12" rx="2.5" fill="{col}"/>')
-    lx -= 8 + len("menos") * 11 * ADV
+    for k, col in enumerate(reversed([c["dim"]] + c["lv"])):
+        lx -= 14
+        o.append(t("0" if k == 4 else "1", lx, sy, 12.5, col, bold=k != 4))
+    lx -= 10 + len("menos") * 11 * ADV
     o.append(t("menos", lx, sy, 11, c["muted"]))
     o.append(f'<rect x="1" y="1" width="{W - 2}" height="{H - 2}" rx="14" fill="none" stroke="{c["line"]}" stroke-width="1.5"/>')
 
     css = (f".scan{{animation:scan {DUR}s linear infinite}}"
            f"@keyframes scan{{0%{{transform:translateX(0);opacity:1}}97%{{opacity:1}}100%{{transform:translateX({gw + 4:.1f}px);opacity:0}}}}"
-           + f".hz{{animation:hz {DUR}s linear infinite}}@keyframes hz{{0%{{fill:{c['muted']}}}6%,100%{{fill:{c['zero']}}}}}"
+           + f".hz{{animation:hz {DUR}s linear infinite}}@keyframes hz{{0%{{fill:{c['muted']}}}6%,100%{{fill:{c['dim']}}}}}"
            + "".join(f".h{i}{{animation:h{i} {DUR}s linear infinite}}"
-                     f"@keyframes h{i}{{0%{{fill:{c['flash']}}}9%,100%{{fill:{col}}}}}"
+                     f"@keyframes h{i}{{0%{{fill:{c['ink']}}}3%{{fill:{c['flash']}}}10%,100%{{fill:{col}}}}}"
                      for i, col in enumerate(c["lv"])) +
            f".prog{{transform-box:fill-box;transform-origin:0 50%;animation:prog {DUR}s linear infinite}}"
            f"@keyframes prog{{from{{transform:scaleX(0)}}}}"
@@ -181,12 +179,44 @@ def gerar(cal, user, th):
             f'<style>{css}</style><defs>{t.defs()}</defs>{"".join(o)}</svg>')
 
 
+def rodape(th):
+    c = T[th]
+    t = Txt()
+    W, H = 1000, 118
+    o = [f'<rect x="1" y="1" width="{W - 2}" height="{H - 2}" rx="14" fill="{c["win"]}" stroke="{c["line"]}" stroke-width="1.5"/>']
+    sz, x0, y1, y2 = 15, 32, 50, 86
+    adv = sz * ADV
+    o.append(t("lucas@github", x0, y1, sz, c["ok"]))
+    o.append(t(":~$", x0 + 12 * adv, y1, sz, c["muted"]))
+    o.append(t("exit", x0 + 16 * adv, y1, sz, c["ink"]))
+    w = 4 * adv
+    o.append(f'<g class="ty" transform="translate({w:.1f} 0)"><rect x="{x0 + 16 * adv:.1f}" y="{y1 - sz}" width="{w + 4:.1f}" height="{sz + 6}" fill="{c["win"]}"/></g>')
+    msg = "obrigado pela visita!"
+    line2 = (t(">", x0, y2, sz, c["muted"]) + t(msg, x0 + 2 * adv, y2, sz, c["ok"])
+             + f'<rect class="cur" x="{x0 + (3 + len(msg)) * adv:.1f}" y="{y2 - sz + 2}" width="{adv:.1f}" height="{sz + 2}" fill="{c["ink"]}"/>')
+    fim = "[sessão encerrada · código 0]"
+    line2 += t(fim, W - 32 - len(fim) * 13 * ADV, y2, 13, c["muted"])
+    o.append(f'<g class="l2">{line2}</g>')
+    css = (".ty{animation:ty .5s steps(4,end) .6s both}@keyframes ty{from{transform:translateX(0)}}"
+           ".l2{animation:l2 .4s ease-out 1.4s both}@keyframes l2{from{opacity:0}}"
+           ".cur{animation:bl 1.06s steps(1) infinite}@keyframes bl{50%{opacity:0}}"
+           "@media (prefers-reduced-motion:reduce){*{animation:none!important}}")
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" '
+            f'aria-label="exit: obrigado pela visita!"><style>{css}</style><defs>{t.defs()}</defs>{"".join(o)}</svg>')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--user", default="LucasRikelmi")
     ap.add_argument("--dados", help="JSON {AAAA-MM-DD: contagem} em vez de consultar a API")
     ap.add_argument("--out", default="assets")
+    ap.add_argument("--rodape", action="store_true", help="gera só assets/rodape-{light,dark}.svg (estático, vai no main)")
     a = ap.parse_args()
+    if a.rodape:
+        for th in ("light", "dark"):
+            with open(os.path.join(a.out, f"rodape-{th}.svg"), "w", encoding="utf-8") as f:
+                f.write(rodape(th))
+        return
     cal = json.load(open(a.dados)) if a.dados else buscar(a.user, os.environ["GITHUB_TOKEN"])
     os.makedirs(a.out, exist_ok=True)
     with open(os.path.join(a.out, "calendario.json"), "w", encoding="utf-8") as f:

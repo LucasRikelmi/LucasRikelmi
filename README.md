@@ -50,3 +50,8 @@
   <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LucasRikelmi/LucasRikelmi/output/contribuicoes-dark.svg">
   <img src="https://raw.githubusercontent.com/LucasRikelmi/LucasRikelmi/output/contribuicoes-light.svg" width="100%" alt="Contribuições de @LucasRikelmi nos últimos 12 meses, por dia, com varredura animada. Mesmo calendário do perfil, atualizado todo dia por um GitHub Action.">
 </picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/rodape-dark.svg">
+  <img src="assets/rodape-light.svg" width="100%" alt="lucas@github:~$ exit. obrigado pela visita!">
+</picture>
